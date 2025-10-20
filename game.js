@@ -161,38 +161,59 @@ export class Game {
     drawVisualizer() {
         const audioData = getAudioData();
         if (!audioData) return;
-
+    
         const centerX = this.size / 2;
         const centerY = this.size / 2;
         const baseRadius = this.radius + this.lineWidth / 2;
-
+    
         let bass = 0;
         // Average the first few bins for a bass/kick drum response
         for (let i = 0; i < 5; i++) {
             bass += audioData[i];
         }
-        bass /= 5;
-
-        const pulseAmount = (bass / 255); // Normalize to 0-1
-        
-        // Only draw if there's a noticeable beat
-        if (pulseAmount > 0.1) {
-            const maxPulse = this.lineWidth * 0.8;
-            const pulseRadius = baseRadius + (pulseAmount * maxPulse);
+        bass = (bass / 5) * 1.2; // Amplify bass slightly
+    
+        const pulseAmount = Math.pow(bass / 255, 2); // Use pow^2 to make it more punchy
+    
+        if (pulseAmount > 0.05) { // Lower threshold for more frequent pulses
+            this.ctx.save();
+            this.ctx.globalCompositeOperation = 'lighter'; // Additive blending for a brighter glow
+    
+            // 1. Inner, vibrant pulse
+            const maxPulseInner = this.lineWidth * 2.5;
+            const pulseRadiusInner = baseRadius + (pulseAmount * maxPulseInner);
             
-            this.ctx.beginPath();
-            this.ctx.arc(centerX, centerY, pulseRadius, 0, Math.PI * 2);
+            const gradientInner = this.ctx.createRadialGradient(centerX, centerY, baseRadius, centerX, centerY, pulseRadiusInner);
+            const pulseColorInner = this.currentColorHsl.copy();
+            pulseColorInner.l = 0.75; // Vibrant lightness
+            pulseColorInner.opacity = Math.min(1, pulseAmount * 1.5); // Strong opacity
             
-            // Create a gradient that fades from the circle outwards
-            const gradient = this.ctx.createRadialGradient(centerX, centerY, baseRadius, centerX, centerY, pulseRadius);
-            const pulseColor = this.currentColorHsl.copy({opacity: pulseAmount * 0.3});
+            gradientInner.addColorStop(0, 'rgba(0,0,0,0)');
+            gradientInner.addColorStop(0.5, pulseColorInner.toString());
+            pulseColorInner.opacity = 0;
+            gradientInner.addColorStop(1, pulseColorInner.toString());
             
-            gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-            gradient.addColorStop(0.8, pulseColor.toString());
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            
-            this.ctx.fillStyle = gradient;
+            this.ctx.fillStyle = gradientInner;
             this.ctx.fill();
+            
+            // 2. Outer, softer "sun" glow
+            const maxPulseOuter = this.lineWidth * 6;
+            const pulseRadiusOuter = baseRadius + (pulseAmount * maxPulseOuter);
+            
+            const gradientOuter = this.ctx.createRadialGradient(centerX, centerY, baseRadius, centerX, centerY, pulseRadiusOuter);
+            const pulseColorOuter = this.currentColorHsl.copy();
+            pulseColorOuter.l = 0.8; // Even lighter
+            pulseColorOuter.opacity = Math.min(0.8, pulseAmount * 1.2);
+            
+            gradientOuter.addColorStop(0, 'rgba(0,0,0,0)');
+            gradientOuter.addColorStop(0.8, pulseColorOuter.toString());
+            pulseColorOuter.opacity = 0;
+            gradientOuter.addColorStop(1, pulseColorOuter.toString());
+            
+            this.ctx.fillStyle = gradientOuter;
+            this.ctx.fill();
+    
+            this.ctx.restore();
         }
     }
 
