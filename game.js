@@ -39,7 +39,6 @@ export class Game {
         this.currentColorHsl = hsl(getHslStringForLevel(1));
         this.targetColorHsl = hsl(getHslStringForLevel(1));
         this.lastGameData = {};
-        this.visualizerTime = 0;
 
         this.onGameOver = null;
         this.onScoreUpdate = null;
@@ -109,8 +108,6 @@ export class Game {
         
         this.currentColorHsl = hsl(getHslStringForLevel(1));
         this.targetColorHsl = hsl(getHslStringForLevel(1));
-        this.lastGameData = {};
-        this.visualizerTime = 0;
 
         this.generateNewTarget();
         
@@ -167,79 +164,46 @@ export class Game {
 
         const centerX = this.size / 2;
         const centerY = this.size / 2;
-        const baseRadius = this.radius + this.lineWidth * 1.5;
+        const outerRadius = this.radius + this.lineWidth / 2;
+        const innerRadius = this.radius - this.lineWidth / 2;
 
-        const bufferLength = audioData.length;
-        
         let bass = 0;
-        const bassBins = 5;
-        for (let i = 0; i < bassBins; i++) {
+        // Average the first few bins for a bass/kick drum response
+        for (let i = 0; i < 5; i++) {
             bass += audioData[i];
         }
-        bass /= bassBins;
-        const bassPulse = (bass / 255); 
+        bass /= 5;
 
-        let mids = 0;
-        const midStartBin = Math.floor(bufferLength / 4);
-        const midEndBin = Math.floor(bufferLength / 2);
-        for(let i = midStartBin; i < midEndBin; i++) {
-            mids += audioData[i];
+        const pulseAmount = (bass / 255); // Normalize to 0-1
+        
+        // Only draw if there's a noticeable beat
+        if (pulseAmount > 0.1) {
+            const pulseColor = this.currentColorHsl.copy({opacity: pulseAmount * 0.3});
+
+            // --- Outer Pulse ---
+            const maxOuterPulse = this.lineWidth * 0.8;
+            const pulseOuterRadius = outerRadius + (pulseAmount * maxOuterPulse);
+            
+            const outerGradient = this.ctx.createRadialGradient(centerX, centerY, outerRadius, centerX, centerY, pulseOuterRadius);
+            outerGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            outerGradient.addColorStop(0.8, pulseColor.toString());
+            outerGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            this.ctx.fillStyle = outerGradient;
+            this.ctx.fillRect(0, 0, this.size, this.size);
+
+            // --- Inner Pulse ---
+            const maxInnerPulse = innerRadius * 0.7; // How far the glow goes inward
+            const pulseInnerRadius = innerRadius - (pulseAmount * maxInnerPulse);
+
+            const innerGradient = this.ctx.createRadialGradient(centerX, centerY, pulseInnerRadius, centerX, centerY, innerRadius);
+            innerGradient.addColorStop(0, 'rgba(0,0,0,0)');
+            innerGradient.addColorStop(0.5, pulseColor.toString());
+            innerGradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+            this.ctx.fillStyle = innerGradient;
+            this.ctx.fillRect(0, 0, this.size, this.size);
         }
-        mids /= (midEndBin - midStartBin) || 1;
-        const midWaviness = (mids / 255);
-
-        if (bassPulse < 0.1) return;
-
-        this.ctx.save();
-        this.ctx.translate(centerX, centerY);
-
-        const maxPulseExtension = this.radius * 0.6;
-        const pulseRadius = baseRadius + bassPulse * maxPulseExtension;
-
-        const layers = [
-            { opacity: 0.2, wavinessFactor: 1.5, speedFactor: 1.0, points: 64, waveCount: 7 },
-            { opacity: 0.3, wavinessFactor: 1.0, speedFactor: -1.2, points: 72, waveCount: 5 },
-        ];
-
-        layers.forEach(layer => {
-            const numPoints = layer.points;
-            const angleStep = (Math.PI * 2) / numPoints;
-
-            this.ctx.beginPath();
-
-            for (let i = 0; i <= numPoints; i++) {
-                const angle = i * angleStep;
-
-                const waveSpeed = this.visualizerTime * layer.speedFactor;
-                const waveAmplitude = midWaviness * maxPulseExtension * 0.4 * layer.wavinessFactor;
-                
-                const waveOffset = Math.sin(angle * layer.waveCount + waveSpeed) * waveAmplitude;
-                const currentRadius = pulseRadius + waveOffset;
-                
-                const x = Math.cos(angle) * currentRadius;
-                const y = Math.sin(angle) * currentRadius;
-
-                if (i === 0) {
-                    this.ctx.moveTo(x, y);
-                } else {
-                    this.ctx.lineTo(x, y);
-                }
-            }
-            
-            this.ctx.closePath();
-            
-            const gradient = this.ctx.createRadialGradient(0, 0, baseRadius * 0.5, 0, 0, pulseRadius + maxPulseExtension);
-            const pulseColor = this.currentColorHsl.copy({opacity: bassPulse * layer.opacity});
-            
-            gradient.addColorStop(0, 'rgba(0,0,0,0)');
-            gradient.addColorStop(0.6, pulseColor.toString());
-            gradient.addColorStop(1, 'rgba(0,0,0,0)');
-            
-            this.ctx.fillStyle = gradient;
-            this.ctx.fill();
-        });
-
-        this.ctx.restore();
     }
 
     draw() {
@@ -288,7 +252,6 @@ export class Game {
 
         const deltaTime = (currentTime - this.lastFrameTime) / 1000;
         this.lastFrameTime = currentTime;
-        this.visualizerTime += deltaTime;
 
         // Smooth color interpolation
         const lerpFactor = Math.min(deltaTime * 2.5, 1);
