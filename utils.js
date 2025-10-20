@@ -29,3 +29,4 @@ export function getComputedColors() {
         fail: computedStyles.getPropertyValue('--fail-color')
     };
 }
+

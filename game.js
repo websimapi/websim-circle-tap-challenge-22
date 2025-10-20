@@ -39,6 +39,7 @@ export class Game {
         this.currentColorHsl = hsl(getHslStringForLevel(1));
         this.targetColorHsl = hsl(getHslStringForLevel(1));
         this.lastGameData = {};
+        this.visualizerTime = 0;
 
         this.onGameOver = null;
         this.onScoreUpdate = null;
@@ -108,6 +109,8 @@ export class Game {
         
         this.currentColorHsl = hsl(getHslStringForLevel(1));
         this.targetColorHsl = hsl(getHslStringForLevel(1));
+        this.lastGameData = {};
+        this.visualizerTime = 0;
 
         this.generateNewTarget();
         
@@ -161,60 +164,82 @@ export class Game {
     drawVisualizer() {
         const audioData = getAudioData();
         if (!audioData) return;
-    
+
         const centerX = this.size / 2;
         const centerY = this.size / 2;
-        const baseRadius = this.radius + this.lineWidth / 2;
-    
+        const baseRadius = this.radius + this.lineWidth * 1.5;
+
+        const bufferLength = audioData.length;
+        
         let bass = 0;
-        // Average the first few bins for a bass/kick drum response
-        for (let i = 0; i < 5; i++) {
+        const bassBins = 5;
+        for (let i = 0; i < bassBins; i++) {
             bass += audioData[i];
         }
-        bass = (bass / 5) * 1.2; // Amplify bass slightly
-    
-        const pulseAmount = Math.pow(bass / 255, 2); // Use pow^2 to make it more punchy
-    
-        if (pulseAmount > 0.05) { // Lower threshold for more frequent pulses
-            this.ctx.save();
-            this.ctx.globalCompositeOperation = 'lighter'; // Additive blending for a brighter glow
-    
-            // 1. Inner, vibrant pulse
-            const maxPulseInner = this.lineWidth * 2.5;
-            const pulseRadiusInner = baseRadius + (pulseAmount * maxPulseInner);
-            
-            const gradientInner = this.ctx.createRadialGradient(centerX, centerY, baseRadius, centerX, centerY, pulseRadiusInner);
-            const pulseColorInner = this.currentColorHsl.copy();
-            pulseColorInner.l = 0.75; // Vibrant lightness
-            pulseColorInner.opacity = Math.min(1, pulseAmount * 1.5); // Strong opacity
-            
-            gradientInner.addColorStop(0, 'rgba(0,0,0,0)');
-            gradientInner.addColorStop(0.5, pulseColorInner.toString());
-            pulseColorInner.opacity = 0;
-            gradientInner.addColorStop(1, pulseColorInner.toString());
-            
-            this.ctx.fillStyle = gradientInner;
-            this.ctx.fill();
-            
-            // 2. Outer, softer "sun" glow
-            const maxPulseOuter = this.lineWidth * 6;
-            const pulseRadiusOuter = baseRadius + (pulseAmount * maxPulseOuter);
-            
-            const gradientOuter = this.ctx.createRadialGradient(centerX, centerY, baseRadius, centerX, centerY, pulseRadiusOuter);
-            const pulseColorOuter = this.currentColorHsl.copy();
-            pulseColorOuter.l = 0.8; // Even lighter
-            pulseColorOuter.opacity = Math.min(0.8, pulseAmount * 1.2);
-            
-            gradientOuter.addColorStop(0, 'rgba(0,0,0,0)');
-            gradientOuter.addColorStop(0.8, pulseColorOuter.toString());
-            pulseColorOuter.opacity = 0;
-            gradientOuter.addColorStop(1, pulseColorOuter.toString());
-            
-            this.ctx.fillStyle = gradientOuter;
-            this.ctx.fill();
-    
-            this.ctx.restore();
+        bass /= bassBins;
+        const bassPulse = (bass / 255); 
+
+        let mids = 0;
+        const midStartBin = Math.floor(bufferLength / 4);
+        const midEndBin = Math.floor(bufferLength / 2);
+        for(let i = midStartBin; i < midEndBin; i++) {
+            mids += audioData[i];
         }
+        mids /= (midEndBin - midStartBin) || 1;
+        const midWaviness = (mids / 255);
+
+        if (bassPulse < 0.1) return;
+
+        this.ctx.save();
+        this.ctx.translate(centerX, centerY);
+
+        const maxPulseExtension = this.radius * 0.6;
+        const pulseRadius = baseRadius + bassPulse * maxPulseExtension;
+
+        const layers = [
+            { opacity: 0.2, wavinessFactor: 1.5, speedFactor: 1.0, points: 64, waveCount: 7 },
+            { opacity: 0.3, wavinessFactor: 1.0, speedFactor: -1.2, points: 72, waveCount: 5 },
+        ];
+
+        layers.forEach(layer => {
+            const numPoints = layer.points;
+            const angleStep = (Math.PI * 2) / numPoints;
+
+            this.ctx.beginPath();
+
+            for (let i = 0; i <= numPoints; i++) {
+                const angle = i * angleStep;
+
+                const waveSpeed = this.visualizerTime * layer.speedFactor;
+                const waveAmplitude = midWaviness * maxPulseExtension * 0.4 * layer.wavinessFactor;
+                
+                const waveOffset = Math.sin(angle * layer.waveCount + waveSpeed) * waveAmplitude;
+                const currentRadius = pulseRadius + waveOffset;
+                
+                const x = Math.cos(angle) * currentRadius;
+                const y = Math.sin(angle) * currentRadius;
+
+                if (i === 0) {
+                    this.ctx.moveTo(x, y);
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            
+            this.ctx.closePath();
+            
+            const gradient = this.ctx.createRadialGradient(0, 0, baseRadius * 0.5, 0, 0, pulseRadius + maxPulseExtension);
+            const pulseColor = this.currentColorHsl.copy({opacity: bassPulse * layer.opacity});
+            
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(0.6, pulseColor.toString());
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            
+            this.ctx.fillStyle = gradient;
+            this.ctx.fill();
+        });
+
+        this.ctx.restore();
     }
 
     draw() {
@@ -263,6 +288,7 @@ export class Game {
 
         const deltaTime = (currentTime - this.lastFrameTime) / 1000;
         this.lastFrameTime = currentTime;
+        this.visualizerTime += deltaTime;
 
         // Smooth color interpolation
         const lerpFactor = Math.min(deltaTime * 2.5, 1);
